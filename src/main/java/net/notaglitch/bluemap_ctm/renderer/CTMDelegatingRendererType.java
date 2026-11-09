@@ -53,7 +53,7 @@ public class CTMDelegatingRendererType implements BlockRendererType {
             BlockRendererType existingDefault = map.get(defaultKey);
             if (existingDefault != null && !(existingDefault instanceof CTMDelegatingRendererType)) {
                 map.put(defaultKey, new CTMDelegatingRendererType(existingDefault));
-                Logger.global.logInfo("[BlueMap-CTM] Successfully hooked into BlueMap DEFAULT BlockRenderer.");
+                Logger.global.logInfo("[BlueMap-CTM] Successfully hooked into BlueMap DEFAULT BlockRenderer. Wrapped: " + existingDefault.getClass().getSimpleName());
             }
         } catch (Throwable t) {
             Logger.global.logWarning("[BlueMap-CTM] Could not hook into DEFAULT BlockRenderer directly: " + t.getMessage());

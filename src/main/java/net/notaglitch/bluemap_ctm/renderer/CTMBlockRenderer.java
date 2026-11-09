@@ -79,8 +79,8 @@ public class CTMBlockRenderer implements BlockRenderer {
             }
         }
 
-        String path = renderState.getId().getValue();
-        if (!path.contains("connecting")) {
+        LayoutInfo layout = getLayoutInfo(renderState);
+        if (layout == null) {
             return; // Not a connecting block, keep default render output
         }
 
@@ -90,8 +90,6 @@ public class CTMBlockRenderer implements BlockRenderer {
 
         int fiPos = ArrayTileModelAccessor.getFI_POSITION();
         int fiUv = ArrayTileModelAccessor.getFI_UV();
-
-        LayoutInfo layout = getLayoutInfo(renderState);
 
         // Process faces in pairs of triangles that make up a quad
         for (int faceIndex = startFace; faceIndex < endFace; faceIndex += 2) {
@@ -223,17 +221,20 @@ public class CTMBlockRenderer implements BlockRenderer {
                                 return new LayoutInfo(LayoutType.PIECED, 0.2f, 1.0f);
                             } else if (w == 64 && h == 16) {
                                 return new LayoutInfo(LayoutType.HORIZONTAL, 0.25f, 1.0f);
-                            } else if (w == h) {
-                                return new LayoutInfo(LayoutType.FULL, 1f / 8f, (w / 8f) / (float) h);
-                            } else if (w * 6 == h * 8) {
+                            } else if (w >= 128 && w == h) {
+                                return new LayoutInfo(LayoutType.FULL, 0.125f, 0.125f);
+                            } else if (w * 6 == h * 8 && w >= 64) {
                                 return new LayoutInfo(LayoutType.FULL, 1f / 8f, 1f / 6f);
                             }
                         }
                     }
                 }
             } catch (Throwable ignored) {}
-            // Default fallback is FULL layout for connecting blocks (8x8 tiles or 8x6 tiles)
-            return new LayoutInfo(LayoutType.FULL, 0.125f, 0.125f);
+
+            if (state.getId().getValue().contains("connecting")) {
+                return new LayoutInfo(LayoutType.FULL, 0.125f, 0.125f);
+            }
+            return null;
         });
     }
 
