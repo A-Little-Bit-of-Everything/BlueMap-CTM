@@ -8,14 +8,21 @@ import de.bluecolored.bluemap.core.map.hires.TileModelView;
 import de.bluecolored.bluemap.core.map.hires.block.BlockRenderer;
 import de.bluecolored.bluemap.core.resources.pack.resourcepack.ResourcePack;
 import de.bluecolored.bluemap.core.resources.pack.resourcepack.blockstate.Variant;
+import de.bluecolored.bluemap.core.resources.pack.resourcepack.model.Model;
+import de.bluecolored.bluemap.core.resources.pack.resourcepack.texture.Texture;
 import de.bluecolored.bluemap.core.util.math.Color;
 import de.bluecolored.bluemap.core.world.BlockEntity;
 import de.bluecolored.bluemap.core.world.BlockState;
 import de.bluecolored.bluemap.core.world.block.BlockNeighborhood;
 import de.bluecolored.bluemap.core.world.block.ExtendedBlock;
 import net.notaglitch.bluemap_ctm.layout.FaceOrientation;
+import net.notaglitch.bluemap_ctm.layout.FullLayout;
 import net.notaglitch.bluemap_ctm.layout.PiecedLayout;
 import net.notaglitch.bluemap_ctm.layout.TextureConnections;
+
+import java.awt.image.BufferedImage;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class CTMBlockRenderer implements BlockRenderer {
 
@@ -23,6 +30,26 @@ public class CTMBlockRenderer implements BlockRenderer {
     private final ResourcePack resourcePack;
     private final TextureGallery textureGallery;
     private final RenderSettings renderSettings;
+
+    private final Map<BlockState, LayoutInfo> layoutCache = new ConcurrentHashMap<>();
+
+    private enum LayoutType {
+        FULL,
+        PIECED,
+        HORIZONTAL
+    }
+
+    private static class LayoutInfo {
+        final LayoutType type;
+        final float uScale;
+        final float vScale;
+
+        LayoutInfo(LayoutType type, float uScale, float vScale) {
+            this.type = type;
+            this.uScale = uScale;
+            this.vScale = vScale;
+        }
+    }
 
     public CTMBlockRenderer(BlockRenderer delegate, ResourcePack resourcePack, TextureGallery textureGallery, RenderSettings renderSettings) {
         this.delegate = delegate;
@@ -63,6 +90,8 @@ public class CTMBlockRenderer implements BlockRenderer {
 
         int fiPos = ArrayTileModelAccessor.getFI_POSITION();
         int fiUv = ArrayTileModelAccessor.getFI_UV();
+
+        LayoutInfo layout = getLayoutInfo(renderState);
 
         // Process faces in pairs of triangles that make up a quad
         for (int faceIndex = startFace; faceIndex < endFace; faceIndex += 2) {
@@ -107,34 +136,105 @@ public class CTMBlockRenderer implements BlockRenderer {
             boolean bottomLeft = isConnected(block, renderState, orient.getBottomLeftDx(), orient.getBottomLeftDy(), orient.getBottomLeftDz());
             boolean topLeft = isConnected(block, renderState, orient.getTopLeftDx(), orient.getTopLeftDy(), orient.getTopLeftDz());
 
-            TextureConnections connections = new TextureConnections(
-                    top, topRight, right, bottomRight, bottom, bottomLeft, left, topLeft
-            );
-
-            int tileIndex = PiecedLayout.getTileIndex(connections);
-            if (tileIndex < 0) {
-                // If mixed corners, select top-left or prominent corner
-                tileIndex = PiecedLayout.getCornerSprite(top, left, topLeft);
+            float minU, minV;
+            if (layout.type == LayoutType.FULL) {
+                int cIndex = FullLayout.getIndex(top, topRight, right, bottomRight, bottom, bottomLeft, left, topLeft);
+                int tileX = FullLayout.getTileX(cIndex);
+                int tileY = FullLayout.getTileY(cIndex);
+                minU = tileX * layout.uScale;
+                minV = tileY * layout.vScale;
+            } else if (layout.type == LayoutType.HORIZONTAL) {
+                int hIndex = (left && right) ? 2 : (right ? 1 : (left ? 3 : 0));
+                minU = hIndex * layout.uScale;
+                minV = 0f;
+            } else { // PIECED
+                TextureConnections connections = new TextureConnections(
+                        top, topRight, right, bottomRight, bottom, bottomLeft, left, topLeft
+                );
+                int tileIndex = PiecedLayout.getTileIndex(connections);
+                if (tileIndex < 0) {
+                    tileIndex = PiecedLayout.getCornerSprite(top, left, topLeft);
+                }
+                minU = tileIndex * layout.uScale;
+                minV = 0f;
             }
 
-            if (tileIndex > 0) {
-                float uShift = tileIndex * 0.2f;
+            // Remap triangle 1 (vertices 0, 1, 2)
+            int uIdx1 = faceIndex * fiUv;
+            for (int k = 0; k < 3; k++) {
+                int uPos = uIdx1 + k * 2;
+                int vPos = uPos + 1;
+                float uLocal = normalizeUv(uvs[uPos]);
+                float vLocal = normalizeUv(uvs[vPos]);
+                uvs[uPos] = minU + uLocal * layout.uScale;
+                uvs[vPos] = minV + vLocal * layout.vScale;
+            }
 
-                // Shift U coordinate for triangle 1
-                int uIdx1 = faceIndex * fiUv;
-                uvs[uIdx1 + 0] += uShift;
-                uvs[uIdx1 + 2] += uShift;
-                uvs[uIdx1 + 4] += uShift;
-
-                // Shift U coordinate for triangle 2 (if present)
-                if (faceIndex + 1 < endFace) {
-                    int uIdx2 = (faceIndex + 1) * fiUv;
-                    uvs[uIdx2 + 0] += uShift;
-                    uvs[uIdx2 + 2] += uShift;
-                    uvs[uIdx2 + 4] += uShift;
+            // Remap triangle 2 (vertices 0, 1, 2) if present
+            if (faceIndex + 1 < endFace) {
+                int uIdx2 = (faceIndex + 1) * fiUv;
+                for (int k = 0; k < 3; k++) {
+                    int uPos = uIdx2 + k * 2;
+                    int vPos = uPos + 1;
+                    float uLocal = normalizeUv(uvs[uPos]);
+                    float vLocal = normalizeUv(uvs[vPos]);
+                    uvs[uPos] = minU + uLocal * layout.uScale;
+                    uvs[vPos] = minV + vLocal * layout.vScale;
                 }
             }
         }
+    }
+
+    private static float normalizeUv(float val) {
+        float norm = val - (float) Math.floor(val);
+        if (norm == 0f && val >= 1.0f) return 1.0f;
+        return norm;
+    }
+
+    private LayoutInfo getLayoutInfo(BlockState state) {
+        return layoutCache.computeIfAbsent(state, s -> {
+            try {
+                de.bluecolored.bluemap.core.resources.pack.resourcepack.blockstate.BlockState bs = resourcePack.getBlockState(s);
+                if (bs != null) {
+                    final Texture[] found = new Texture[1];
+                    bs.forEach(s, 0, 0, 0, v -> {
+                        if (found[0] != null) return;
+                        Model model = v.getModel().getResource(resourcePack.getModels()::get);
+                        if (model != null && model.getTextures() != null) {
+                            for (var tv : model.getTextures().values()) {
+                                var tp = tv.getTexturePath(model.getTextures()::get);
+                                if (tp != null) {
+                                    Texture tex = tp.getResource(resourcePack.getTextures()::get);
+                                    if (tex != null) {
+                                        found[0] = tex;
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    if (found[0] != null) {
+                        BufferedImage img = found[0].getTextureImage();
+                        if (img != null) {
+                            int w = img.getWidth();
+                            int h = img.getHeight();
+                            if (w == 80 && h == 16) {
+                                return new LayoutInfo(LayoutType.PIECED, 0.2f, 1.0f);
+                            } else if (w == 64 && h == 16) {
+                                return new LayoutInfo(LayoutType.HORIZONTAL, 0.25f, 1.0f);
+                            } else if (w == h) {
+                                return new LayoutInfo(LayoutType.FULL, 1f / 8f, (w / 8f) / (float) h);
+                            } else if (w * 6 == h * 8) {
+                                return new LayoutInfo(LayoutType.FULL, 1f / 8f, 1f / 6f);
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+            // Default fallback is FULL layout for connecting blocks (8x8 tiles or 8x6 tiles)
+            return new LayoutInfo(LayoutType.FULL, 0.125f, 0.125f);
+        });
     }
 
     private boolean isConnected(BlockNeighborhood block, BlockState current, int dx, int dy, int dz) {
