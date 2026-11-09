@@ -1,7 +1,7 @@
 package net.notaglitch.bluemap_ctm.renderer;
 
 import de.bluecolored.bluemap.core.map.TextureGallery;
-import de.bluecolored.bluemap.core.map.hires.ArrayTileModelAccessor;
+import net.notaglitch.bluemap_ctm.util.ArrayTileModelAccessor;
 import de.bluecolored.bluemap.core.map.hires.RenderSettings;
 import de.bluecolored.bluemap.core.map.hires.TileModel;
 import de.bluecolored.bluemap.core.map.hires.TileModelView;
