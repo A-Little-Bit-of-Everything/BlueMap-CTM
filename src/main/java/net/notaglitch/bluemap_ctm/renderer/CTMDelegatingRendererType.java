@@ -21,6 +21,10 @@ public class CTMDelegatingRendererType implements BlockRendererType {
         this.delegate = delegate;
     }
 
+    public BlockRendererType getDelegate() {
+        return delegate;
+    }
+
     @Override
     public Key getKey() {
         return delegate.getKey();

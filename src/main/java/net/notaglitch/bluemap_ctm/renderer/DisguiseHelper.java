@@ -8,6 +8,7 @@ import java.lang.reflect.Method;
 public class DisguiseHelper {
 
     private static Method getDisguisedStateMethod = null;
+    private static Method getDisguisedMaterialMethod = null;
     private static boolean methodLookedUp = false;
 
     public static BlockState getDisguisedState(BlockEntity be) {
@@ -17,13 +18,27 @@ public class DisguiseHelper {
             methodLookedUp = true;
             try {
                 Class<?> clazz = Class.forName("net.notaglitch.bluemap_disguise.blockentity.DisguisedBlockEntity");
-                getDisguisedStateMethod = clazz.getMethod("getDisguisedBlockState");
+                try {
+                    getDisguisedStateMethod = clazz.getMethod("getDisguisedBlockState");
+                } catch (Throwable ignored) {}
+                try {
+                    getDisguisedMaterialMethod = clazz.getMethod("getDisguisedMaterial", String.class);
+                } catch (Throwable ignored) {}
             } catch (Throwable ignored) {}
         }
 
         if (getDisguisedStateMethod != null) {
             try {
                 Object res = getDisguisedStateMethod.invoke(be);
+                if (res instanceof BlockState bs) {
+                    return bs;
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        if (getDisguisedMaterialMethod != null) {
+            try {
+                Object res = getDisguisedMaterialMethod.invoke(be, (Object) null);
                 if (res instanceof BlockState bs) {
                     return bs;
                 }
