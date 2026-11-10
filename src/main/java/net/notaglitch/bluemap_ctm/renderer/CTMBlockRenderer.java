@@ -231,7 +231,14 @@ public class CTMBlockRenderer implements BlockRenderer {
                 }
             } catch (Throwable ignored) {}
 
-            if (state.getId().getValue().contains("connecting")) {
+            String val = state.getId().getValue();
+            if (val.contains("brick_pattern")) {
+                return new LayoutInfo(LayoutType.FULL, 0.125f, 0.125f);
+            }
+            if (val.contains("tiles") || val.contains("beams")) {
+                return new LayoutInfo(LayoutType.PIECED, 0.2f, 1.0f);
+            }
+            if (val.contains("connecting")) {
                 return new LayoutInfo(LayoutType.FULL, 0.125f, 0.125f);
             }
             return null;
